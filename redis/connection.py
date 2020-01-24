@@ -738,11 +738,6 @@ class Connection(object):
             raise response
         return response
 
-    def _maybe_to_bytes(self, arg):
-        if isinstance(arg, memoryview):
-            return arg.tobytes()
-        else:
-            return arg
 
     def pack_command(self, *args):
         "Pack a series of arguments into the Redis protocol"
@@ -764,42 +759,20 @@ class Connection(object):
             # to avoid large string mallocs, chunk the command into the
             # output list if we're sending large values
             arg_length = len(arg)
-            if len(buff) > buffer_cutoff or arg_length > buffer_cutoff:
-                buff = SYM_EMPTY.join(
-                    (buff, SYM_DOLLAR, str(arg_length).encode(), SYM_CRLF))
-                output.append(buff)
-                output.append(arg)
-                buff = SYM_CRLF
-            else:
-                buff = SYM_EMPTY.join(
-                    (buff, SYM_DOLLAR, str(arg_length).encode(),
-                     SYM_CRLF, self._maybe_to_bytes(arg), SYM_CRLF))
+            buff = SYM_EMPTY.join(
+                (buff, SYM_DOLLAR, str(arg_length).encode(), SYM_CRLF))
+            output.append(buff)
+            output.append(arg)
+            buff = SYM_CRLF
         output.append(buff)
         return output
 
     def pack_commands(self, commands):
         "Pack multiple commands into the Redis protocol"
         output = []
-        pieces = []
-        buffer_length = 0
-        buffer_cutoff = self._buffer_cutoff
-
         for cmd in commands:
             for chunk in self.pack_command(*cmd):
-                chunklen = len(chunk)
-                if buffer_length > buffer_cutoff or chunklen > buffer_cutoff:
-                    output.append(SYM_EMPTY.join(pieces))
-                    buffer_length = 0
-                    pieces = []
-
-                if chunklen > self._buffer_cutoff:
-                    output.append(chunk)
-                else:
-                    pieces.append(chunk)
-                    buffer_length += chunklen
-
-        if pieces:
-            output.append(SYM_EMPTY.join(pieces))
+                output.append(chunk)
         return output
 
 
@@ -879,7 +852,7 @@ class UnixDomainSocketConnection(Connection):
         self._sock = None
         self._parser = parser_class(socket_read_size=socket_read_size)
         self._connect_callbacks = []
-        self._buffer_cutoff = 6000
+        self._buffer_cutoff = -1#6000
 
     def repr_pieces(self):
         pieces = [
